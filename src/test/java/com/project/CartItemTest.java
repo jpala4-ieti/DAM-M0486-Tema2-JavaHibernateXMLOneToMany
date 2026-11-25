@@ -6,6 +6,7 @@ import org.junit.jupiter.api.MethodOrderer.OrderAnnotation;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -461,6 +462,7 @@ public class CartItemTest {
      * HQL WHERE:
      * Podem filtrar resultats utilitzant sintaxi similar a SQL
      * però referint-nos als camps de l'entitat (no de la taula).
+     * El valor es passa com a paràmetre amb nom (:name), mai concatenat.
      */
     @Test
     @Order(33)
@@ -468,7 +470,7 @@ public class CartItemTest {
     public void testListWithWhereClause() {
         // Act
         List<Item> items = Manager.listCollection(Item.class, 
-            "name LIKE '%Test 1%'");
+            "name LIKE :name", Map.of("name", "%Test 1%"));
         
         // Assert
         assertFalse(items.isEmpty(), "Hauria de trobar l'item amb 'Test 1' al nom");

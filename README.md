@@ -2,16 +2,40 @@
 
 En aquest projecte hi ha un exemple de Hibernate tipus XML One To Many
 
-## Compilació i exeució
+## Compilació i execució
 
-Cal el 'Maven' per compilar el projecte
+Cal Java 21 i 'Maven' per compilar el projecte
 ```bash
 mvn clean
 mvn compile
 mvn test
 ```
 
+### Execució amb mvn
+La manera més directa. Compila i executa la classe principal definida al `pom.xml` (`com.project.Main`):
+```bash
+mvn compile exec:java
+```
+
+Per executar una altra classe principal, per exemple la que mostra el contingut de la base de dades SQLite:
+```bash
+mvn compile exec:java "-Dexec.mainClass=com.project.utils.MainSQLite"
+```
+
+Per passar paràmetres a l'aplicació:
+```bash
+mvn compile exec:java "-Dexec.mainClass=com.project.Main" "-Dexec.args=param1 param2 param3"
+```
+
+On:
+* `exec.mainClass`: és la classe principal que vols executar.
+* `exec.args`: són els paràmetres que necessites passar a la teva aplicació, separats per espais.
+
+Afegeix `-q` (`mvn -q compile exec:java`) per veure només la sortida del programa, sense els missatges de Maven.
+
 ### Execució amb script
+Els scripts fan el mateix que l'apartat anterior i, a més, defineixen les opcions `--add-opens` de Java a la variable `MAVEN_OPTS`.
+
 Per executar el projecte a Windows cal
 ```bash
 .\run.ps1 com.project.Main
@@ -22,41 +46,26 @@ Per executar el projecte a Linux/macOS cal
 ./run.sh com.project.Main
 ```
 
-### Execució amb mvn
-Si prefereixes executar el projecte pas a pas, pots seguir les següents instruccions:
-
-Neteja el projecte per eliminar fitxers anteriors:
-```bash
-mvn clean
-```
-
-Compila el projecte:
-```bash
-mvn compile test package
-```
-
-Executa la classe principal:
-```bash
-mvn exec:java -q -Dexec.mainClass="<com.project.Main>" <param1> <param2> <param3>
-```
-
-On:
-* <com.project.Main>: és la classe principal que vols executar.
-* \<param1>, \<param2>, \<param3>: són els paràmetres que necessites passar a la teva aplicació.
-
-
 ### Execució directa amb java
 Preparar les dependències en una carpeta (Recomanada per a proves)
 ```bash
 mvn clean package dependency:copy-dependencies
 ```
 
+A Windows (el separador del classpath és `;`):
 ```bash
 java --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED -cp "target/classes;target/dependency/*" com.project.Main
 ```
 
-### Execució directa amb java (jar package)
+A Linux/macOS (el separador del classpath és `:`):
 ```bash
+java --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED -cp "target/classes:target/dependency/*" com.project.Main
+```
+
+### Execució directa amb java (jar package)
+`mvn clean package` genera un jar únic amb totes les dependències:
+```bash
+mvn clean package
 java --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED -jar target/hibernate-xml-one-to-many-1.0.0.jar
 ```
 
@@ -64,17 +73,17 @@ java --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.nio=
 ```bash
 # Executar TOTS els tests
 mvn test
-# Executar un test individual especificant package o només nom del test
+# Executar una classe de test, amb el package o només amb el nom
 mvn test "-Dtest=com.project.CartItemTest"
-mvn test -Dtest=CartItemTest
-# Executar múltiples tests específics (separats per comes)
-mvn test -Dtest=""
-# Tots els tests que comencin amb "Lectura"
-mvn test -Dtest="Cart*"
-# Tots els tests que continguin "Arxiu"
-mvn test -Dtest="*Item*"
-# Tests específics de List i Scanner
-mvn test -Dtest="*Cart*,*Item*"
+mvn test "-Dtest=CartItemTest"
+# Executar un sol mètode de test
+mvn test "-Dtest=CartItemTest#testCreateCart"
+# Executar diversos mètodes de test (separats per +)
+mvn test "-Dtest=CartItemTest#testCreateCart+testCreateItems"
+# Totes les classes de test que comencin amb "Cart"
+mvn test "-Dtest=Cart*"
+# Totes les classes de test que continguin "Item"
+mvn test "-Dtest=*Item*"
 ```
 
 ## Docker per treballar amb mysql

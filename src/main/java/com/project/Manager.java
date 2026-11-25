@@ -3,6 +3,7 @@ package com.project;
 import java.io.Serializable;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -63,14 +64,16 @@ public class Manager {
      * - Si hi ha error → rollback() (desfà tots els canvis)
      */
     private static void executeInTransaction(Consumer<Session> action) {
-        Transaction tx = null;
         try (Session session = factory.openSession()) {
-            tx = session.beginTransaction();
-            action.accept(session);
-            tx.commit();
-        } catch (Exception e) {
-            if (tx != null && tx.isActive()) tx.rollback();
-            throw new RuntimeException("Error en transacció Hibernate", e);
+            Transaction tx = session.beginTransaction();
+            try {
+                action.accept(session);
+                tx.commit();
+            } catch (Exception e) {
+                // El rollback es fa abans que el try-with-resources tanqui la sessió
+                tx.rollback();
+                throw new RuntimeException("Error en transacció Hibernate", e);
+            }
         }
     }
 
@@ -81,17 +84,21 @@ public class Manager {
      * 
      * GENÈRICS <T>: Permet que el mètode retorni qualsevol tipus d'objecte
      * (Cart, Item, List<Cart>, etc.) sense duplicar codi.
+     * 
+     * NOTA: Hibernate ja porta aquests dos mètodes fets: factory.inTransaction(...)
+     * i factory.fromTransaction(...). Aquí s'escriuen a mà per veure què fan.
      */
     private static <T> T executeInTransactionWithResult(Function<Session, T> action) {
-        Transaction tx = null;
         try (Session session = factory.openSession()) {
-            tx = session.beginTransaction();
-            T result = action.apply(session);
-            tx.commit();
-            return result;
-        } catch (Exception e) {
-            if (tx != null && tx.isActive()) tx.rollback();
-            throw new RuntimeException("Error en transacció Hibernate", e);
+            Transaction tx = session.beginTransaction();
+            try {
+                T result = action.apply(session);
+                tx.commit();
+                return result;
+            } catch (Exception e) {
+                tx.rollback();
+                throw new RuntimeException("Error en transacció Hibernate", e);
+            }
         }
     }
 
@@ -121,18 +128,18 @@ public class Manager {
     }
 
     /**
-     * GET: Recupera una entitat per la seva clau primària (ID).
-     * Retorna null si no existeix. És una operació de lectura.
+     * FIND: Recupera una entitat per la seva clau primària (ID).
+     * Retorna null si no existeix. (get() està obsolet des de Hibernate 7.)
      * 
-     * MERGE: Actualitza l'entitat a la base de dades. Copia l'estat
-     * de l'objecte "detached" a un objecte "managed" i el sincronitza.
+     * DIRTY CHECKING: N'hi ha prou de modificar l'objecte. En fer commit, Hibernate
+     * el compara amb com era quan el va carregar i genera l'UPDATE tot sol.
+     * No cal cridar cap update() ni merge().
      */
     public static void updateItem(long itemId, String name) {
         executeInTransaction(session -> {
-            Item item = session.get(Item.class, itemId);
+            Item item = session.find(Item.class, itemId);
             if (item != null) {
                 item.setName(name);
-                session.merge(item);
             }
         });
     }
@@ -148,7 +155,7 @@ public class Manager {
      */
     public static void updateCart(long cartId, String type, Set<Item> newItems) {
         executeInTransaction(session -> {
-            Cart cart = session.get(Cart.class, cartId);
+            Cart cart = session.find(Cart.class, cartId);
             if (cart == null) return;
             
             cart.setType(type);
@@ -164,14 +171,15 @@ public class Manager {
 
                 // 2. Afegir nous items (recuperant-los com a "managed")
                 for (Item item : newItems) {
-                    Item managedItem = session.get(Item.class, item.getItemId());
+                    Item managedItem = session.find(Item.class, item.getItemId());
                     if (managedItem != null) {
                         cart.addItem(managedItem);
                     }
                 }
             }
 
-            session.merge(cart);
+            // No cal merge(): el Cart l'ha carregat aquesta sessió i el dirty checking
+            // detecta tots els canvis en fer commit.
         });
     }
     
@@ -185,7 +193,7 @@ public class Manager {
      */
     public static Cart getCartWithItems(long cartId) {
         return executeInTransactionWithResult(session -> {
-            Cart cart = session.get(Cart.class, cartId);
+            Cart cart = session.find(Cart.class, cartId);
             if (cart != null) {
                 Hibernate.initialize(cart.getItems());
             }
@@ -199,7 +207,7 @@ public class Manager {
      * Evita duplicar codi per cada entitat.
      */
     public static <T> T getById(Class<T> clazz, long id) {
-        return executeInTransactionWithResult(session -> session.get(clazz, id));
+        return executeInTransactionWithResult(session -> session.find(clazz, id));
     }
 
     /**
@@ -208,7 +216,7 @@ public class Manager {
      */
     public static <T> void delete(Class<T> clazz, Serializable id) {
         executeInTransaction(session -> {
-            T obj = session.get(clazz, id);
+            T obj = session.find(clazz, id);
             if (obj != null) {
                 session.remove(obj);
             }
@@ -223,12 +231,26 @@ public class Manager {
      * clazz.getName() retorna el nom complet de la classe (com.project.Cart).
      */
     public static <T> List<T> listCollection(Class<T> clazz, String whereClause) {
+        return listCollection(clazz, whereClause, Map.of());
+    }
+
+    /**
+     * PARÀMETRES AMB NOM: Els valors de la condició no es concatenen mai dins de
+     * la consulta (risc d'injecció). S'escriuen com a :nom i es passen a part:
+     * 
+     *   listCollection(Item.class, "name LIKE :name", Map.of("name", "%Test%"))
+     * 
+     * El whereClause només ha de contenir text fix escrit pel programador.
+     */
+    public static <T> List<T> listCollection(Class<T> clazz, String whereClause, Map<String, Object> params) {
         return executeInTransactionWithResult(session -> {
             String hql = "FROM " + clazz.getName();
             if (whereClause != null && !whereClause.trim().isEmpty()) {
                 hql += " WHERE " + whereClause;
             }
-            return session.createQuery(hql, clazz).list();
+            var query = session.createQuery(hql, clazz);
+            params.forEach((name, value) -> query.setParameter(name, value));
+            return query.getResultList();
         });
     }
 
@@ -262,12 +284,12 @@ public class Manager {
     /**
      * NATIVEQUERY: Permet executar SQL pur (no HQL).
      * Útil per operacions específiques de la BD o optimitzacions.
-     * executeUpdate() s'usa per INSERT, UPDATE, DELETE (retorna files afectades).
+     * createNativeMutationQuery() s'usa per INSERT, UPDATE, DELETE;
+     * executeUpdate() retorna el nombre de files afectades.
      */
     public static void queryUpdate(String queryString) {
         executeInTransaction(session -> {
-            NativeQuery<?> query = session.createNativeQuery(queryString, Void.class);
-            query.executeUpdate();
+            session.createNativeMutationQuery(queryString).executeUpdate();
         });
     }
 

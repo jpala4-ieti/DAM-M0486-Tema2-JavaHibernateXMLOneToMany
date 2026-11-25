@@ -1,7 +1,6 @@
 package com.project;
 
 import java.io.Serializable;
-import java.util.Objects;
 
 /**
  * Classe que representa un article/producte dins d'un carret.
@@ -20,9 +19,9 @@ public class Item implements Serializable {
     /**
      * RELACIÓ MANYTOONE: Referència al carret que conté aquest article.
      * Aquesta és la part "Many" de la relació (molts Items pertanyen a un Cart).
-     * És el costat INVERS de la relació bidireccional amb Cart.
-     * A la base de dades, això es tradueix en una columna FK (Foreign Key) 
-     * a la taula Item que apunta a la taula Cart.
+     * És el costat PROPIETARI de la relació bidireccional amb Cart: a la base de dades
+     * es tradueix en una columna FK (Foreign Key) a la taula Item que apunta a la taula Cart.
+     * El costat invers és Cart.items, que al mapeig porta inverse="true".
      */
     private Cart cart;
 
@@ -56,33 +55,26 @@ public class Item implements Serializable {
     }
 
     /**
-     * EQUALS PER ENTITATS JPA:
-     * - Si és el mateix objecte en memòria → true
-     * - Si algun dels dos no està persistit (ID=0) → compara per referència
-     * - Si tots dos estan persistits → compara per ID
-     * 
-     * Aquesta estratègia evita problemes quan l'ID s'assigna automàticament
-     * després de persistir l'entitat a la base de dades.
+     * EQUALS PER ENTITATS: Dues entitats són iguals si tenen el mateix ID.
+     * Una entitat encara no persistida (ID = 0) només és igual a ella mateixa.
+     * S'utilitza instanceof (i no getClass()) perquè Hibernate pot crear proxies,
+     * que són subclasses de l'entitat.
      */
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        Item item = (Item) o;
-        if (itemId == 0 || item.itemId == 0) return this == item;
-        return itemId == item.itemId;
+        if (!(o instanceof Item other)) return false;
+        return itemId != 0 && itemId == other.getItemId();
     }
     
     /**
-     * HASHCODE COHERENT AMB EQUALS:
-     * - Si l'entitat té ID (està persistida) → hashCode basat en ID
-     * - Si no té ID → hashCode per defecte d'Object (basat en memòria)
-     * 
-     * REGLA FONAMENTAL: Si dos objectes són equals(), han de tenir
-     * el mateix hashCode(). Per això ambdós mètodes segueixen la mateixa lògica.
+     * HASHCODE ESTABLE: Retorna sempre el mateix valor per a totes les instàncies.
+     * Si depengués de l'ID, canviaria quan la base de dades l'assigna, i una entitat
+     * desada en un HashSet abans de persistir-la ja no s'hi trobaria.
+     * REGLA FONAMENTAL: Si dos objectes són equals(), han de tenir el mateix hashCode().
      */
     @Override
     public int hashCode() {
-        return (itemId > 0) ? Objects.hash(itemId) : super.hashCode();
+        return Item.class.hashCode();
     }    
 }

@@ -2,7 +2,6 @@ package com.project;
 
 import java.io.Serializable;
 import java.util.HashSet;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -50,12 +49,19 @@ public class Cart implements Serializable {
         return items;
     }
   
-    public void setItems(Set<Item> items) {
-        this.items = items;
-        if (this.items != null) {
-            for (Item item : this.items) {
-                item.setCart(this);
+    /**
+     * No se substitueix mai la col·lecció que gestiona Hibernate (this.items = ...):
+     * es modifica amb els mètodes d'ajuda, que mantenen els dos costats sincronitzats.
+     */
+    public void setItems(Set<Item> newItems) {
+        Set<Item> desired = (newItems == null) ? new HashSet<>() : new HashSet<>(newItems);
+        for (Item current : new HashSet<>(this.items)) {
+            if (!desired.contains(current)) {
+                removeItem(current);
             }
+        }
+        for (Item item : desired) {
+            addItem(item);
         }
     }
   
@@ -82,6 +88,10 @@ public class Cart implements Serializable {
      * - stream(): converteix la col·lecció en un flux de dades
      * - map(): transforma cada Item al seu nom (String)
      * - Collectors.joining(): uneix tots els noms amb ", " i afegeix "[" i "]"
+     *
+     * En general un toString() no hauria de recórrer una relació: pot llançar consultes
+     * inesperades o recursió infinita. Aquí és segur perquè la col·lecció es carrega
+     * sempre amb el Cart (lazy="false" al mapeig) i només es llegeix el nom de cada Item.
      */
     @Override
     public String toString() {
@@ -97,26 +107,26 @@ public class Cart implements Serializable {
     }
     
     /**
-     * EQUALS PER ENTITATS JPA: Compara per ID si l'entitat està persistida.
-     * Si l'ID és 0 (no persistida), compara per referència d'objecte.
-     * Això evita problemes quan l'ID s'assigna després de persistir.
+     * EQUALS PER ENTITATS: Dues entitats són iguals si tenen el mateix ID.
+     * Una entitat encara no persistida (ID = 0) només és igual a ella mateixa.
+     * S'utilitza instanceof (i no getClass()) perquè Hibernate pot crear proxies,
+     * que són subclasses de l'entitat.
      */
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        Cart cart = (Cart) o;
-        if (cartId == 0 || cart.cartId == 0) return this == cart;
-        return cartId == cart.cartId;
+        if (!(o instanceof Cart other)) return false;
+        return cartId != 0 && cartId == other.getCartId();
     }
     
     /**
-     * HASHCODE PER ENTITATS JPA: Si està persistida (ID > 0), utilitza l'ID.
-     * Si no, utilitza el hashCode per defecte de Object.
-     * IMPORTANT: equals i hashCode han de ser coherents entre si.
+     * HASHCODE ESTABLE: Retorna sempre el mateix valor per a totes les instàncies.
+     * Si depengués de l'ID, canviaria quan la base de dades l'assigna, i una entitat
+     * desada en un HashSet abans de persistir-la ja no s'hi trobaria.
+     * REGLA FONAMENTAL: Si dos objectes són equals(), han de tenir el mateix hashCode().
      */
     @Override
     public int hashCode() {
-        return (cartId > 0) ? Objects.hash(cartId) : super.hashCode();
+        return Cart.class.hashCode();
     }    
 }

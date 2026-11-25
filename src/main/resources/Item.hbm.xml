@@ -2,7 +2,7 @@
 <!DOCTYPE hibernate-mapping PUBLIC "-//Hibernate/Hibernate Mapping DTD//EN" "http://www.hibernate.org/dtd/hibernate-mapping-3.0.dtd"> 
 <hibernate-mapping>
    <class name = "com.project.Item" table = "Item">
-        <id name = "itemId" type = "long" column = "id">
+        <id name = "itemId" type = "long" column = "itemId">
             <generator class="native"/>
         </id>
 
